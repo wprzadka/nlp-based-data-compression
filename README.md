@@ -12,4 +12,4 @@
     Decodes file indicated by "file_path"
 ```
 
-Original work about asymmetric numeral systems (ANS) https://arxiv.org/pdf/1311.2540.pdf
+Original work about asymmetric numeral systems (ANS) https://arxiv.org/pdf/1311.2540.pdf# nlp-based-data-compression
