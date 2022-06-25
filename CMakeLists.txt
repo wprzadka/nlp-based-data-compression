@@ -4,7 +4,9 @@ project(ANS)
 set(CMAKE_CXX_STANDARD 17)
 
 add_executable(${PROJECT_NAME}
+        nlohmann/json.hpp
         src/rans.cpp
+        src/tokenizer.cpp
         src/main.cpp)
 
 add_subdirectory(googletest)
