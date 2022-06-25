@@ -4,14 +4,14 @@ project(ANS)
 set(CMAKE_CXX_STANDARD 17)
 
 add_executable(${PROJECT_NAME}
-        rans.cpp
-        main.cpp)
+        src/rans.cpp
+        src/main.cpp)
 
 add_subdirectory(googletest)
 include_directories(${gtest_SOURCE_DIR}/include ${gtest_SOURCE_DIR})
 
 add_executable(${PROJECT_NAME}_tests
-        rans.cpp
+        src/rans.cpp
         tests/rans_tests.cpp
 )
 target_link_libraries(${PROJECT_NAME}_tests gtest gtest_main)

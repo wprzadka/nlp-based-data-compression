@@ -4,7 +4,7 @@
 
 #include <fstream>
 #include "gtest/gtest.h"
-#include "../rans.h"
+#include "../src/rans.h"
 
 class RANS_Coding_Test: public ::testing::Test{
 public:
