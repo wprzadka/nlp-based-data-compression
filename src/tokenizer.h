@@ -17,12 +17,14 @@ class Tokenizer {
 
 public:
     Tokenizer(const std::string& vocabulary_path, const std::string& pair_merges_path);
-    std::vector<std::string> divide_to_subwords(const std::string& word);
+    std::vector<int> tokenize(const std::string& text);
+    inline std::vector<int> operator()(const std::string& text){return tokenize(text);}
 
 private:
     static std::map<std::string, int> read_vocabulary(const std::string&);
     static std::map<StringPair, int> read_pair_merges(const std::string& path);
-//    static std::vector<StringPair> get_character_pairs(const std::string& word);
+    std::vector<std::string> divide_to_subwords(const std::string& word);
+    //    static std::vector<StringPair> get_character_pairs(const std::string& word);
     static std::vector<StringPair> get_character_pairs(const std::vector<std::string>& word);
     bool compare_by_rank(const StringPair &a, const StringPair &b);
 };

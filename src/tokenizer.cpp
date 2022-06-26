@@ -5,6 +5,7 @@
 #include <string>
 #include <map>
 #include <fstream>
+#include <regex>
 #include "tokenizer.h"
 #include "../nlohmann/json.hpp"
 
@@ -46,6 +47,29 @@ std::map<Tokenizer::StringPair, int> Tokenizer::read_pair_merges(const std::stri
         ++rank;
     }
     return merges;
+}
+
+std::vector<int> Tokenizer::tokenize(const std::string& text) {
+    std::vector<int> tokens{};
+
+    std::regex re(R"('s|'t|'re|'ve|'m|'ll|'d| ?\w+|[,.!?])");
+    std::smatch result;
+    auto iter = text.begin();
+    while(std::regex_search(iter, text.end(), result, re)){
+        std::string word = result.begin()->str();
+        if (word[0] == ' ') {
+            word = word.substr(1);
+        }
+        std::vector<std::string> subwords = divide_to_subwords(word);
+        // TODO work with leading spaces properly
+        for (const std::string& v: subwords){
+            tokens.push_back(vocabulary[v]);
+        }
+
+        iter += (result.begin()->str().size());
+    }
+
+    return tokens;
 }
 
 std::vector<std::string> Tokenizer::divide_to_subwords(const std::string &word) {
