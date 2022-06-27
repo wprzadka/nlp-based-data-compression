@@ -29,7 +29,7 @@ private:
     //    static std::vector<StringPair> get_character_pairs(const std::string& word);
     static std::vector<StringPair> get_character_pairs(const std::vector<std::string>& word);
     bool compare_by_rank(const StringPair &a, const StringPair &b);
-    std::string bytes_to_unicode(const std::string &word);
+    std::vector<std::string> bytes_to_unicode(const std::string &word);
 };
 
 

@@ -78,8 +78,7 @@ std::vector<int> Tokenizer::tokenize(const std::string& text) {
     std::smatch result;
     auto iter = text.begin();
     while(std::regex_search(iter, text.end(), result, re)){
-        std::string word = bytes_to_unicode(result.begin()->str());
-
+        std::string word = result.begin()->str();
         std::vector<std::string> subwords = divide_to_subwords(word);
         for (const std::string& v: subwords){
             tokens.push_back(vocabulary[v]);
@@ -92,20 +91,14 @@ std::vector<int> Tokenizer::tokenize(const std::string& text) {
 }
 
 std::vector<std::string> Tokenizer::divide_to_subwords(const std::string &word) {
-    std::vector<std::string> tokens{};
-
-    for (auto iter = word.begin(); iter != word.end(); ++iter) {
-        if(*iter < 0){
-            tokens.emplace_back(iter, iter + 2);
-            ++iter;
-        }else{
-            tokens.emplace_back(iter, iter + 1);
-        }
-    }
-
+    std::vector<std::string> tokens = bytes_to_unicode(word);
     std::vector<StringPair> pairs = get_character_pairs(tokens);
     if (pairs.empty()){
-        return std::vector<std::string>{word};
+        std::string res{};
+        for (const auto& w: tokens){
+            res += w;
+        }
+        return std::vector<std::string>{res};
     }
     while (true) {
         StringPair bigram = *std::min_element(
@@ -176,10 +169,10 @@ bool Tokenizer::compare_by_rank(const Tokenizer::StringPair &a, const Tokenizer:
     return fst->second < snd->second;
 }
 
-std::string Tokenizer::bytes_to_unicode(const std::string& word){
-    std::string new_word;
+std::vector<std::string> Tokenizer::bytes_to_unicode(const std::string& word){
+    std::vector<std::string> new_word;
     for (char w: word){
-        new_word += unicode[w];
+        new_word.emplace_back(unicode[w]);
     }
     return new_word;
 }
