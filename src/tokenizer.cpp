@@ -18,6 +18,10 @@ Tokenizer::Tokenizer(
     vocabulary = read_vocabulary(vocabulary_path);
     pair_merges_ranks = read_pair_merges(pair_merges_path);
     unicode = read_unicode_mapping(unicodes_path);
+
+    for (const auto& entry: vocabulary){
+        decoder[entry.second] = entry.first;
+    }
 }
 
 std::map<std::string, int> Tokenizer::read_vocabulary(const std::string & path) {
@@ -175,4 +179,12 @@ std::vector<std::string> Tokenizer::bytes_to_unicode(const std::string& word){
         new_word.emplace_back(unicode[w]);
     }
     return new_word;
+}
+
+std::string Tokenizer::decode(const std::vector<int>& tokens){
+    std::string result;
+    for (auto v: tokens){
+        result += decoder[v];
+    }
+    return result;
 }
