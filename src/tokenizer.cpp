@@ -6,12 +6,18 @@
 #include <map>
 #include <fstream>
 #include <regex>
+#include <iostream>
 #include "tokenizer.h"
 #include "../nlohmann/json.hpp"
 
-Tokenizer::Tokenizer(const std::string& vocabulary_path, const std::string& pair_merges_path){
+Tokenizer::Tokenizer(
+        const std::string& vocabulary_path,
+        const std::string& pair_merges_path,
+        const std::string& unicodes_path
+        ) {
     vocabulary = read_vocabulary(vocabulary_path);
     pair_merges_ranks = read_pair_merges(pair_merges_path);
+    unicode = read_unicode_mapping(unicodes_path);
 }
 
 std::map<std::string, int> Tokenizer::read_vocabulary(const std::string & path) {
@@ -27,7 +33,6 @@ std::map<std::string, int> Tokenizer::read_vocabulary(const std::string & path) 
     std::map<std::string, int> vocab{};
     for (nlohmann::json::iterator iter = json_vocab.begin(); iter != json_vocab.end(); ++iter){
         vocab[iter.key()] = iter.value();
-//        std::cout << iter.key() << ": " << iter.value() << "\n";
     }
     return vocab;
 }
@@ -49,6 +54,23 @@ std::map<Tokenizer::StringPair, int> Tokenizer::read_pair_merges(const std::stri
     return merges;
 }
 
+std::map<char, std::string> Tokenizer::read_unicode_mapping(const std::string & path) {
+    std::ifstream file(path, std::ios_base::in);
+    if (!file.is_open()) {
+        throw std::runtime_error("can't open the file");
+    }
+
+    nlohmann::json json_unicodes;
+    file >> json_unicodes;
+    file.close();
+
+    std::map<char, std::string> unicodes{};
+    for (nlohmann::json::iterator iter = json_unicodes.begin(); iter != json_unicodes.end(); ++iter){
+        unicodes[std::stoi(iter.key())] = iter.value();
+    }
+    return unicodes;
+}
+
 std::vector<int> Tokenizer::tokenize(const std::string& text) {
     std::vector<int> tokens{};
 
@@ -56,12 +78,9 @@ std::vector<int> Tokenizer::tokenize(const std::string& text) {
     std::smatch result;
     auto iter = text.begin();
     while(std::regex_search(iter, text.end(), result, re)){
-        std::string word = result.begin()->str();
-        if (word[0] == ' ') {
-            word = word.substr(1);
-        }
+        std::string word = bytes_to_unicode(result.begin()->str());
+
         std::vector<std::string> subwords = divide_to_subwords(word);
-        // TODO work with leading spaces properly
         for (const std::string& v: subwords){
             tokens.push_back(vocabulary[v]);
         }
@@ -73,10 +92,17 @@ std::vector<int> Tokenizer::tokenize(const std::string& text) {
 }
 
 std::vector<std::string> Tokenizer::divide_to_subwords(const std::string &word) {
-    std::vector<std::string> tokens(word.size());
-    for (int i = 0; i < word.size(); ++i){
-        tokens[i] = word[i];
+    std::vector<std::string> tokens{};
+
+    for (auto iter = word.begin(); iter != word.end(); ++iter) {
+        if(*iter < 0){
+            tokens.emplace_back(iter, iter + 2);
+            ++iter;
+        }else{
+            tokens.emplace_back(iter, iter + 1);
+        }
     }
+
     std::vector<StringPair> pairs = get_character_pairs(tokens);
     if (pairs.empty()){
         return std::vector<std::string>{word};
@@ -148,4 +174,12 @@ bool Tokenizer::compare_by_rank(const Tokenizer::StringPair &a, const Tokenizer:
         return true;
     }
     return fst->second < snd->second;
+}
+
+std::string Tokenizer::bytes_to_unicode(const std::string& word){
+    std::string new_word;
+    for (char w: word){
+        new_word += unicode[w];
+    }
+    return new_word;
 }
