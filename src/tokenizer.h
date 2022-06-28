@@ -13,6 +13,7 @@ class Tokenizer {
     typedef std::pair<std::string, std::string> StringPair;
 
     std::map<std::string, int> vocabulary;
+    std::map<int, std::string> decoder;
     std::map<StringPair, int> pair_merges_ranks;
     std::map<char, std::string> unicode;
 
@@ -20,6 +21,7 @@ public:
     Tokenizer(const std::string& vocabulary_path, const std::string& pair_merges_path, const std::string& unicodes_path);
     std::vector<int> tokenize(const std::string& text);
     inline std::vector<int> operator()(const std::string& text){return tokenize(text);}
+    std::string decode(const std::vector<int> &tokens);
 
 private:
     static std::map<std::string, int> read_vocabulary(const std::string&);
