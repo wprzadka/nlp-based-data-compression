@@ -3,6 +3,7 @@ import torch
 import argparse
 import json
 import logging
+import math
 
 from transformers import GPT2LMHeadModel, GPT2Tokenizer
 
@@ -54,21 +55,14 @@ def get_frequencies(probabilities: torch.tensor, M) -> np.ndarray:
 
 
 def Streaming_rANS_encoder(tokens, predictor, tokenizer, filter, M=2**12, verbose=False):
-    enc_states = []
-    enc_tokens = []
-    enc_probs = []
-    enc_counts = []
-
     range_factor = (2 ** (32-12))
-    bitstream = [] #initialize stream
+    bitstream = []
     state = 2 ** 16 #state initialized to lM
 
     prediction_window = 12
     # // WARNING! NO ATTENTION
 
-    number_of_tokens = tokens.size(1)
-
-    for idx, current in reversed(list(enumerate(tokens[0, 1:], 1))): #iterate over the input   
+    for idx, current in reversed(list(enumerate(tokens[0, 1:], 1))):
 
         if verbose:
             print(f'current, idx -> {current, idx}')
@@ -83,19 +77,13 @@ def Streaming_rANS_encoder(tokens, predictor, tokenizer, filter, M=2**12, verbos
                     print(tokenizer.decode(c), end='|')
                 print()
 
-            enc_tokens.append(prepared_tokens)
-
             output = predictor(prepared_tokens).logits[:, -1, :]
             logits = output[0]
         # filter words out of vocabulary
         logits[~filter] = -torch.inf
         prob = torch.softmax(logits, dim=0)
 
-        enc_probs.append(prob[filter])
-
         symbol_counts = get_frequencies(prob, M)
-
-        enc_counts.append(symbol_counts[filter])
 
         # Output bits to the stream to bring the state in the range for the next encoding
         while state >= range_factor * symbol_counts[current]:
@@ -103,8 +91,7 @@ def Streaming_rANS_encoder(tokens, predictor, tokenizer, filter, M=2**12, verbos
             state = state // (2**16)
 
         state = C_rANS(current, state, symbol_counts, M) # The rANS encoding step
-        enc_states.append((state, bitstream.copy()))
-    return bitstream, enc_states, enc_tokens, enc_probs, enc_counts
+    return bitstream, state, int(tokens.shape[1])
 
 
 def Streaming_rANS_decoder(state, bitstream, symbol_counts, M):
@@ -122,7 +109,6 @@ def Streaming_rANS_decoder(state, bitstream, symbol_counts, M):
 
 
 def decode(tokenizer, model, state, fst_token, length, bitstream, filter, prediction_window=12, verbose=False, M=2**12):
-    dec_tokens, dec_probs, dec_counts = [], [], []
     decode_result = tokenizer.decode(fst_token[0])
     tokens = fst_token
     idx = 1
@@ -132,7 +118,6 @@ def decode(tokenizer, model, state, fst_token, length, bitstream, filter, predic
         with torch.no_grad():
 
             prepared_tokens = torch.unsqueeze(tokens[0, beg: idx], 0)
-            dec_tokens.append(prepared_tokens)
 
             if verbose:
                 for c in prepared_tokens[0]:
@@ -145,9 +130,7 @@ def decode(tokenizer, model, state, fst_token, length, bitstream, filter, predic
         # filter words out of vocabulary
         logits[~filter] = -torch.inf
         prob = torch.softmax(logits, dim=0)
-        dec_probs.append(prob[filter])
         symbol_counts = get_frequencies(prob, M_VAL)
-        dec_counts.append(symbol_counts[filter])
 
         symbol, state = Streaming_rANS_decoder(state, bitstream, symbol_counts, M)
 
@@ -155,13 +138,13 @@ def decode(tokenizer, model, state, fst_token, length, bitstream, filter, predic
         length -= 1
         tokens = torch.cat((tokens, torch.tensor([[symbol]])), 1)
         decode_result += tokenizer.decode(symbol)
-    print(state, length)
-    return decode_result, dec_tokens
+    logger.debug('state: %s, length: %s', state, length)
+    return decode_result
 
 
-def bitstring_to_bytes(s):
+def bitstring_to_bytes(s, byteorder='big'):
     length = (len(s) + 7) // 8
-    return int(s, 2).to_bytes(length, byteorder='big'), length
+    return int(s, 2).to_bytes(length, byteorder=byteorder), length
 
 
 if __name__ == '__main__':
@@ -175,6 +158,8 @@ if __name__ == '__main__':
     model = GPT2LMHeadModel.from_pretrained("gpt2")
     model.eval()
 
+    byteorder = 'big'
+
     if args.encode:
         with open(args.input, 'r') as f:
             msg = f.read()
@@ -184,77 +169,77 @@ if __name__ == '__main__':
         filter_[tokens] = 1
 
         total = int(filter_.sum())
-
         use_bitmask = tokenizer.vocab_size < total * 2 + int(np.ceil(np.log2(total)))
 
-        bitstream, enc_states, enc_tokens, enc_probs, enc_counts = Streaming_rANS_encoder(tokens, model, tokenizer, filter_, M_VAL)
-
-        state = enc_states[-1][0]
+        bitstream, state, length = Streaming_rANS_encoder(tokens, model, tokenizer, filter_, M_VAL)
         fst_token = tokens[:,0]
-        length = len(enc_counts)
 
         seq = ''.join(map(str,filter_.int().numpy()))
         logger.info('len(seq) %s', len(seq))
 
         with open(args.output, 'wb') as f:
-            f.write(length.to_bytes(4, byteorder='big'))
-            f.write(int(fst_token).to_bytes(4, byteorder='big'))
+            f.write(length.to_bytes(4, byteorder=byteorder))
+            f.write(int(fst_token).to_bytes(4, byteorder=byteorder))
 
             flags = 0 | use_bitmask
 
-            f.write(flags.to_bytes(1, byteorder='big'))
+            f.write(flags.to_bytes(1, byteorder=byteorder))
             if use_bitmask:
-                s, ll = bitstring_to_bytes(seq)
-                f.write(ll.to_bytes(2, byteorder='big'))
-                logger.info('s %s', s)
-                logger.info('ll %s', ll)
+                filter_mask_as_bytes, filter_mask_as_bytes_length = bitstring_to_bytes(seq, byteorder=byteorder)
+                f.write(filter_mask_as_bytes_length.to_bytes(2, byteorder=byteorder))
+                logger.info('filter_mask_as_bytes_length: %s', filter_mask_as_bytes_length)
+                logger.info('filter_mask_as_bytes: %s', filter_mask_as_bytes)
                 f.write(s)
             else:
                 # save indices instead
-                f.write(total.to_bytes(2, byteorder='big'))
+                f.write(total.to_bytes(2, byteorder=byteorder))
                 for x in filter_.nonzero():
-                    f.write(int(x).to_bytes(2, byteorder='big'))
+                    f.write(int(x).to_bytes(2, byteorder=byteorder))
 
             # TODO: try to optimize these sizes
-            f.write(len(bitstream).to_bytes(4, byteorder='big'))
+            f.write(len(bitstream).to_bytes(4, byteorder=byteorder))
             for b in bitstream:
-                f.write(int(b).to_bytes(4, byteorder='big'))
+                f.write(int(b).to_bytes(4, byteorder=byteorder))
 
-            f.write(int(state).to_bytes(16, byteorder='big'))
+            # numpy throws an error if the number is too large
+            num_state_bytes = math.ceil(math.log2(int(state)))
+            f.write(int(num_state_bytes).to_bytes(4, byteorder=byteorder))
+            f.write(int(state).to_bytes(num_state_bytes, byteorder=byteorder))
     else:
         with open(args.input, 'rb') as f:
-            length = int.from_bytes(f.read(4), byteorder='big')
-            fst_token = torch.tensor(int.from_bytes(f.read(4), byteorder='big'), dtype=torch.int).unsqueeze(0).unsqueeze(0)
+            length = int.from_bytes(f.read(4), byteorder=byteorder)
+            fst_token = torch.tensor(int.from_bytes(f.read(4), byteorder=byteorder), dtype=torch.int).unsqueeze(0).unsqueeze(0)
 
-            flags = int.from_bytes(f.read(1), byteorder='big')
+            flags = int.from_bytes(f.read(1), byteorder=byteorder)
 
             use_bitmask = bool(flags & 1)
 
             if use_bitmask:
-                num_filter_bytes = int.from_bytes(f.read(2), byteorder='big')
+                num_filter_bytes = int.from_bytes(f.read(2), byteorder=byteorder)
                 filter_bytes = f.read(num_filter_bytes)
-                filter_ = int.from_bytes(filter_bytes, byteorder='big')
+                filter_ = int.from_bytes(filter_bytes, byteorder=byteorder)
                 logger.info('num_filter_bytes: %s, filter_bytes: %s', num_filter_bytes, filter_bytes)
                 filter_bin = bin(filter_)
+                # FIXME: binary string was 1 char shorter, missing a '0' at the beginning
+                #        not sure why though, it was saved properly
                 filter_bin = filter_bin[0] + filter_bin[2:]
                 logger.info('filter mask length: %s', len(filter_bin))
                 filter_ = torch.tensor([int(x) for x in filter_bin], dtype=torch.bool)
             else:
-                total = int.from_bytes(f.read(2), byteorder='big')
+                total = int.from_bytes(f.read(2), byteorder=byteorder)
                 indices = [0] * total
                 for i in range(total):
-                    indices[i] = int.from_bytes(f.read(2), byteorder='big')
+                    indices[i] = int.from_bytes(f.read(2), byteorder=byteorder)
                 filter_ = torch.zeros(tokenizer.vocab_size, dtype=torch.bool)
                 filter_[indices] = 1
 
-
-            bs_length = int.from_bytes(f.read(4), byteorder='big')
-
+            bs_length = int.from_bytes(f.read(4), byteorder=byteorder)
             bitstream = []
             for i in range(bs_length):
-                bitstream.append(int.from_bytes(f.read(4), byteorder='big'))
+                bitstream.append(int.from_bytes(f.read(4), byteorder=byteorder))
 
-            state = int.from_bytes(f.read(16), byteorder='big')
+            num_state_bytes = int.from_bytes(f.read(4), byteorder=byteorder)
+            state = int.from_bytes(f.read(num_state_bytes), byteorder=byteorder)
 
         logger.info('length: %s', length)
         logger.info('fst_token: %s', fst_token)
@@ -263,7 +248,7 @@ if __name__ == '__main__':
         logger.info('bitstream: %s', bitstream)
         logger.info('state: %s', state)
 
-        result, dec_tokens = decode(tokenizer=tokenizer,
+        result = decode(tokenizer=tokenizer,
                 model=model,
                 state=state,
                 fst_token=fst_token,
