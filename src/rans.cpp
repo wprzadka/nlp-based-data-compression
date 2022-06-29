@@ -10,15 +10,6 @@ RANS::RANS(Tokenizer tokenizer, Predictor predictor): tokenizer(std::move(tokeni
     use_predictor = true;
 }
 
-std::array<uint32_t, RANS::MAX_SYMBOL> RANS::compute_frequencies(const char* word, uint16_t size){
-    std::array<uint32_t, RANS::MAX_SYMBOL> freq{};
-    std::fill(freq.begin(), freq.end(), 0);
-    for (int i = 0; i < size; ++i) {
-        ++freq[word[i] + NEGATIVE_SYMBOLS_NUM];
-    }
-    return freq;
-}
-
 std::array<uint32_t, RANS::MAX_SYMBOL> RANS::compute_cumulative_freq(){
     std::array<uint32_t, RANS::MAX_SYMBOL> acc{};
     acc[0] = 0;
@@ -39,36 +30,23 @@ char RANS::get_symbol(uint32_t value){
 }
 #endif
 
-void RANS::prepare_frequencies(const char* data, uint16_t size){
-    frequencies = compute_frequencies(data, size);
-    normalize_symbol_frequencies();
-    accumulated = compute_cumulative_freq();
-}
-
 std::string RANS::encode(const char* data, uint16_t size) {
     uint32_t state = (1 << HALF_STATE_BITS);
     std::string encoded;
 
-    torch::Tensor tokens = tokenizer(data);
+    torch::Tensor tokens = tokenizer(std::string(data));
     std::cout << tokens.sizes() << " | " << tokens.size(1) << "\n";
 
     // Encode data
     for (long i = tokens.size(1) - 1; i >= 1; --i) {
 
-        std::cout << "before: " << tokens.sizes() << "\n";
-
         long beg = std::max(0l, i - prediction_window);
-        torch::Tensor input = tokens.index(
-                {0, torch::indexing::Slice(beg, i, torch::indexing::None)}
-                );
-        std::cout << "after: " << input.sizes() << "\n";
-//        std::cout << input << "\n\n";
+        torch::Tensor input = torch::unsqueeze(tokens.index({0, torch::indexing::Slice(beg, i, torch::indexing::None)}), 0);
 
-        torch::Tensor probas = predictor(tokens);
-
+        torch::Tensor probas = predictor(input);
         compute_frequencies_from_probas(probas);
 
-        uint32_t freq = get_frequency(data[i]);
+        uint32_t freq = get_frequency(tokens.index({0, i}).item().toInt());
         while (state >= freq * (1 << (STATE_BITS - N_VALUE))){
             encoded += static_cast<char>(state & 255);
             state >>= 8;
@@ -152,40 +130,25 @@ void RANS::normalize_symbol_frequencies(){
 }
 
 void RANS::compute_frequencies_from_probas(const torch::Tensor& probabilities) {
-    // Normalize occurrence probabilities to fractions of 2^N_VALUE
-    uint32_t sum_freq = 0;
+    torch::Tensor freqs = (probabilities * (1 << N_VALUE)).toType(torch::kInt32);
 
-    assert(probabilities.size(0) > 0);
-    for (int idx = 0; idx < probabilities.size(0); ++idx){
-        double prob = probabilities.index({idx}).item().toDouble();
-        uint32_t new_freq = static_cast<uint32_t>(prob * (1 << N_VALUE));
-        new_freq = new_freq == 0 ? 1 : new_freq;
-        frequencies[idx] = new_freq;
-        sum_freq += new_freq;
+    // TODO normalize sum of frequencies to (1 << N_VAL)
+    long diff = (1 << N_VALUE) - freqs.sum().item().toLong();
+    while (diff < 0){
+        torch::Tensor mask = freqs > 0;
+        torch::Tensor nd = diff / mask.sum();
+        mask = freqs > nd;
+        freqs += mask * nd;
+        diff -= (mask.sum() * nd).item().toLong();
     }
-    // Ensure that frequencies sums to 2^N
-    auto iter = std::find_if(
-            frequencies.begin(),
-            frequencies.end(),
-            [](uint32_t x){return x > 0;}
-    );
-    *iter += (1 << N_VALUE) - sum_freq;
+
+    for (int idx = 0; idx < frequencies.size(); ++idx) {
+        frequencies[idx] = freqs.index({idx}).item().toInt();
+    }
+
     // Check if all frequencies are in valid range
     for(auto val : frequencies){
         assert(val <= (1 << N_VALUE));
     }
-}
-
-void RANS::init_frequencies(const std::array<uint32_t, RANS::MAX_SYMBOL>& freqs) {
-    frequencies = freqs;
     accumulated = compute_cumulative_freq();
-#ifdef USE_LOOKUP_TABLE
-    char symbol = SCHAR_MAX - 1;
-    for (int i = (1 << N_VALUE) - 1; i >= 0; --i) {
-        while (i < get_accumulated(symbol) && symbol > SCHAR_MIN){
-            --symbol;
-        }
-        symbols_lookup[i] = symbol;
-    }
-#endif
 }
