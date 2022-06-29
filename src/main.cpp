@@ -8,9 +8,18 @@
 #include <cassert>
 #include <numeric>
 #include "rans.h"
+#include "tokenizer.h"
+#include "predictor.h"
 
 static const uint8_t BLOCK_SIZE_BYTES = 2;
 static const uint8_t SYMBOL_FREQ_BYTES = 3;
+
+static std::map<std::string, std::string> config {
+        {"vocab", "./data/gpt2-vocab/vocab.json"},
+        {"merges", "./data/gpt2-vocab/merges.txt"},
+        {"unicode", "./data/gpt2-vocab/unicode.json"},
+        {"predictor", "./data/gpt2-lm.pt"}
+};
 
 void write_symbol_freqencies(const std::array<uint32_t, RANS::MAX_SYMBOL>& freqs, std::ofstream& file){
 
@@ -93,19 +102,28 @@ int encode_file(const std::string& input_file, const std::string& output_file = 
     if(!file_reader.is_open() || !file_writer.is_open()){
         return 1;
     }
-    RANS rans{};
+    RANS rans(
+        Tokenizer(config["vocab"], config["merges"], config["unicode"]),
+        Predictor(config["predictor"])
+    );
     char* mem_buff = new char[rans.BLOCK_SIZE];
     while(file_reader){
         // Read next block
         file_reader.read(mem_buff, rans.BLOCK_SIZE);
         uint32_t bits_read = file_reader.gcount();
+
+        /*
         // Prepare and frequencies of symbol occurrence
         rans.prepare_frequencies(mem_buff, bits_read);
+        */
+
         // encode block
         std::string enc = rans.encode(mem_buff, bits_read);
         // save block with frequencies to file
+        /*
         write_symbol_freqencies(rans.frequencies, file_writer);
-        write_size_of_block(file_writer, enc.size());
+        */
+         write_size_of_block(file_writer, enc.size());
         file_writer.write(enc.c_str(), static_cast<long>(enc.size()));
     }
     delete[] mem_buff;
@@ -120,7 +138,10 @@ int decode_file(const std::string& input_file, const std::string& output_file = 
     if(!file_reader.is_open() || !file_writer.is_open()){
         return 1;
     }
-    RANS rans{};
+    RANS rans(
+            Tokenizer(config["vocab"], config["merges"], config["unicode"]),
+            Predictor(config["predictor"])
+    );
     char* mem_buff = new char[rans.BLOCK_SIZE];
     // read end of file position
     file_reader.seekg(0, std::ifstream::end);
@@ -149,7 +170,33 @@ int decode_file(const std::string& input_file, const std::string& output_file = 
 }
 
 int main(int argc, char** argv){
+    /*
+    Tokenizer tokenizer = Tokenizer(
+            "./data/gpt2-vocab/vocab.json",
+            "./data/gpt2-vocab/merges.txt",
+            "./data/gpt2-vocab/unicode.json"
+            );
+    Predictor pred("./data/gpt2-lm.pt");
 
+    std::string text = "I am";
+    for (int i = 0; i < 5; ++i) {
+        torch::Tensor tokens = tokenizer(text);
+
+        std::cout << "sizes: " << tokens.sizes() << "\n";
+        std::cout << "sizes: " << tokens.index({0, torch::indexing::Slice(0, i + 1, torch::indexing::None)}).sizes() << "\n";
+
+//        tokens = tokens.index(
+//                {torch::indexing::Slice(i - 2, i - 1, torch::indexing::None)}
+//        );
+        int arg = pred(tokens).argmax().item().toInt();
+        std::string next = tokenizer.decode({arg});
+        std::cout << ">" << next << "\n";
+        text += next;
+    }
+    std::cout << "\n--\n" << text << "\n";
+
+    return 0;
+    */
     option option_names[] = {
             {"version", no_argument, nullptr, 'v'},
             {"help", no_argument, nullptr, 'h'},

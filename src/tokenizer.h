@@ -7,6 +7,7 @@
 
 
 #include <vector>
+#include <torch/script.h>
 
 class Tokenizer {
 
@@ -19,8 +20,8 @@ class Tokenizer {
 
 public:
     Tokenizer(const std::string& vocabulary_path, const std::string& pair_merges_path, const std::string& unicodes_path);
-    std::vector<int> tokenize(const std::string& text);
-    inline std::vector<int> operator()(const std::string& text){return tokenize(text);}
+    torch::Tensor tokenize(const std::string& text);
+    inline torch::Tensor operator()(const std::string& text){return tokenize(text);}
     std::string decode(const std::vector<int> &tokens);
 
 private:

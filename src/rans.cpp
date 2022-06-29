@@ -4,6 +4,11 @@
 
 #include "rans.h"
 #include <bits/stdc++.h>
+#include <utility>
+
+RANS::RANS(Tokenizer tokenizer, Predictor predictor): tokenizer(std::move(tokenizer)), predictor(std::move(predictor)) {
+    use_predictor = true;
+}
 
 std::array<uint32_t, RANS::MAX_SYMBOL> RANS::compute_frequencies(const char* word, uint16_t size){
     std::array<uint32_t, RANS::MAX_SYMBOL> freq{};
@@ -44,8 +49,25 @@ std::string RANS::encode(const char* data, uint16_t size) {
     uint32_t state = (1 << HALF_STATE_BITS);
     std::string encoded;
 
+    torch::Tensor tokens = tokenizer(data);
+    std::cout << tokens.sizes() << " | " << tokens.size(1) << "\n";
+
     // Encode data
-    for (int i = size - 1; i >= 0; --i) {
+    for (long i = tokens.size(1) - 1; i >= 1; --i) {
+
+        std::cout << "before: " << tokens.sizes() << "\n";
+
+        long beg = std::max(0l, i - prediction_window);
+        torch::Tensor input = tokens.index(
+                {0, torch::indexing::Slice(beg, i, torch::indexing::None)}
+                );
+        std::cout << "after: " << input.sizes() << "\n";
+//        std::cout << input << "\n\n";
+
+        torch::Tensor probas = predictor(tokens);
+
+        compute_frequencies_from_probas(probas);
+
         uint32_t freq = get_frequency(data[i]);
         while (state >= freq * (1 << (STATE_BITS - N_VALUE))){
             encoded += static_cast<char>(state & 255);
@@ -122,6 +144,31 @@ void RANS::normalize_symbol_frequencies(){
             frequencies.end(),
             [](uint32_t x){return x > 0;}
             );
+    *iter += (1 << N_VALUE) - sum_freq;
+    // Check if all frequencies are in valid range
+    for(auto val : frequencies){
+        assert(val <= (1 << N_VALUE));
+    }
+}
+
+void RANS::compute_frequencies_from_probas(const torch::Tensor& probabilities) {
+    // Normalize occurrence probabilities to fractions of 2^N_VALUE
+    uint32_t sum_freq = 0;
+
+    assert(probabilities.size(0) > 0);
+    for (int idx = 0; idx < probabilities.size(0); ++idx){
+        double prob = probabilities.index({idx}).item().toDouble();
+        uint32_t new_freq = static_cast<uint32_t>(prob * (1 << N_VALUE));
+        new_freq = new_freq == 0 ? 1 : new_freq;
+        frequencies[idx] = new_freq;
+        sum_freq += new_freq;
+    }
+    // Ensure that frequencies sums to 2^N
+    auto iter = std::find_if(
+            frequencies.begin(),
+            frequencies.end(),
+            [](uint32_t x){return x > 0;}
+    );
     *iter += (1 << N_VALUE) - sum_freq;
     // Check if all frequencies are in valid range
     for(auto val : frequencies){

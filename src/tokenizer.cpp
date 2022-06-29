@@ -75,7 +75,7 @@ std::map<char, std::string> Tokenizer::read_unicode_mapping(const std::string & 
     return unicodes;
 }
 
-std::vector<int> Tokenizer::tokenize(const std::string& text) {
+torch::Tensor Tokenizer::tokenize(const std::string& text) {
     std::vector<int> tokens{};
 
     std::regex re(R"('s|'t|'re|'ve|'m|'ll|'d| ?\w+|[,.!?])");
@@ -91,7 +91,12 @@ std::vector<int> Tokenizer::tokenize(const std::string& text) {
         iter += (result.begin()->str().size());
     }
 
-    return tokens;
+    auto options = torch::TensorOptions().dtype(torch::kInt32);
+    torch::Tensor tensor = torch::from_blob((void *) tokens.data(), {1, static_cast<long>(tokens.size())}, options)
+            .to(torch::kInt32)
+            .clone();
+
+    return tensor;
 }
 
 std::vector<std::string> Tokenizer::divide_to_subwords(const std::string &word) {

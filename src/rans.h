@@ -10,6 +10,8 @@
 #include <map>
 #include <climits>
 #include "gtest/gtest.h"
+#include "predictor.h"
+#include "tokenizer.h"
 
 #define USE_LOOKUP_TABLE
 
@@ -17,6 +19,9 @@ class RANS {
     FRIEND_TEST(RANS_Test, get_symbol);
     FRIEND_TEST(RANS_Test, prepare_frequencies);
 
+    Tokenizer tokenizer;
+    Predictor predictor;
+    const int prediction_window = 32;
 public:
     const static uint8_t N_VALUE = 12;
     const static uint32_t MASK = (1 << N_VALUE) - 1;
@@ -30,6 +35,9 @@ public:
 
     std::array<uint32_t, MAX_SYMBOL> frequencies{};
     std::array<uint32_t, MAX_SYMBOL> accumulated{};
+    bool use_predictor = false;
+
+    RANS(Tokenizer tokenizer, Predictor predictor);
 
     inline uint32_t get_frequency(char symbol) {return frequencies[static_cast<int16_t>(symbol) + NEGATIVE_SYMBOLS_NUM];};
     inline uint32_t get_accumulated(char symbol) {return accumulated[static_cast<int16_t>(symbol) + NEGATIVE_SYMBOLS_NUM];};
@@ -48,6 +56,8 @@ protected:
     std::array<uint32_t, MAX_SYMBOL> compute_cumulative_freq();
     void normalize_symbol_frequencies();
     char get_symbol(uint32_t value);
+
+    void compute_frequencies_from_probas(const torch::Tensor &probabilities);
 };
 
 

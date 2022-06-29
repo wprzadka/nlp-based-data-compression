@@ -14,8 +14,9 @@ class Predictor {
 
 public:
     explicit Predictor(const std::string& path);
-    int forward(const std::vector<int>& tokens);
-    inline int operator()(const std::vector<int>& tokens) {return forward(tokens);}
+    torch::Tensor forward(const torch::Tensor& tokens);
+    inline torch::Tensor operator()(const torch::Tensor& tokens) {return forward(tokens);}
+    static int argmax(const torch::Tensor& probs);
 };
 
 
