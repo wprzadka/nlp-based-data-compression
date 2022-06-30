@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import torch
 import argparse
@@ -17,6 +18,8 @@ def parse_args():
     parser.add_argument('output', type=str, help='msg')
     parser.add_argument('-encode', action='store_true', help='encode')
     parser.add_argument('-log_level', type=int, default=1)
+    parser.add_argument('-verbose', action='store_true', help='additional verbosity')
+    parser.add_argument('-batch_size', type=int, default=8192, help='how many bytes of text per block')
     # TODO: configurable model
     return parser.parse_args()
 
@@ -62,7 +65,9 @@ def Streaming_rANS_encoder(tokens, predictor, tokenizer, filter, M=2**12, verbos
     prediction_window = 12
     # // WARNING! NO ATTENTION
 
-    for idx, current in reversed(list(enumerate(tokens[0, 1:], 1))):
+    # list() will pull everything into memory right?
+    #for idx, current in reversed(list(enumerate(tokens[0, 1:], 1))):
+    for idx, current in zip(range(len(tokens[0]) - 1, 0, -1), reversed(tokens[0, 1:])):
 
         if verbose:
             print(f'current, idx -> {current, idx}')
@@ -147,6 +152,104 @@ def bitstring_to_bytes(s, byteorder='big'):
     return int(s, 2).to_bytes(length, byteorder=byteorder), length
 
 
+#https://stackoverflow.com/questions/2301789/how-to-read-a-file-in-reverse-order#23646049
+def reverse_read(fh, buf_size=8192):
+    """A generator that returns characters from a file in `buf_size` chunks in reverse order"""
+    offset = 0
+    fh.seek(0, os.SEEK_END)
+    file_size = remaining_size = fh.tell()
+    while remaining_size > 0:
+        offset = min(file_size, offset + buf_size)
+        fh.seek(file_size - offset)
+        buffer = fh.read(min(remaining_size, buf_size))
+        remaining_size -= buf_size
+        yield buffer
+
+
+def save_block(f, fst_token, filter_, vocab_size, bitstream, state, length, byteorder='big'):
+    total = int(filter_.sum())
+    use_bitmask = vocab_size < total * 2 + int(np.ceil(np.log2(total)))
+
+    seq = ''.join(map(str,filter_.int().numpy()))
+    logger.debug('len(seq) %s', len(seq))
+
+    f.write(length.to_bytes(4, byteorder=byteorder))
+    f.write(int(fst_token).to_bytes(4, byteorder=byteorder))
+
+    flags = 0 | use_bitmask
+
+    f.write(flags.to_bytes(1, byteorder=byteorder))
+    if use_bitmask:
+        filter_mask_as_bytes, filter_mask_as_bytes_length = bitstring_to_bytes(seq, byteorder=byteorder)
+        f.write(filter_mask_as_bytes_length.to_bytes(2, byteorder=byteorder))
+        logger.debug('filter_mask_as_bytes_length: %s', filter_mask_as_bytes_length)
+        logger.debug('filter_mask_as_bytes: %s', filter_mask_as_bytes)
+        f.write(s)
+    else:
+        # save indices instead
+        f.write(total.to_bytes(2, byteorder=byteorder))
+        for x in filter_.nonzero():
+            f.write(int(x).to_bytes(2, byteorder=byteorder))
+
+    # TODO: try to optimize these sizes
+    f.write(len(bitstream).to_bytes(4, byteorder=byteorder))
+    for b in bitstream:
+        f.write(int(b).to_bytes(4, byteorder=byteorder))
+
+    # numpy throws an error if the number is too large
+    num_state_bytes = math.ceil(math.log2(int(state)))
+    f.write(int(num_state_bytes).to_bytes(4, byteorder=byteorder))
+    f.write(int(state).to_bytes(num_state_bytes, byteorder=byteorder))
+
+class EOFError(Exception):
+    pass
+
+def read_block(f):
+    # TODO: minimize number of f.read()s? (use larger buffers when possible)
+    length = int.from_bytes(f.read(4), byteorder=byteorder)
+    if not length:  # next block doesn't exist
+        raise EOFError()
+    fst_token = torch.tensor(int.from_bytes(f.read(4), byteorder=byteorder), dtype=torch.int).unsqueeze(0).unsqueeze(0)
+    flags = int.from_bytes(f.read(1), byteorder=byteorder)
+    use_bitmask = bool(flags & 1)
+
+    if use_bitmask:
+        num_filter_bytes = int.from_bytes(f.read(2), byteorder=byteorder)
+        filter_bytes = f.read(num_filter_bytes)
+        filter_ = int.from_bytes(filter_bytes, byteorder=byteorder)
+        logger.debug('num_filter_bytes: %s, filter_bytes: %s', num_filter_bytes, filter_bytes)
+        filter_bin = bin(filter_)
+        # FIXME: binary string was 1 char shorter, missing a '0' at the beginning
+        #        not sure why though, it was saved properly
+        logger.debug('filter mask length: %s', len(filter_bin))
+        filter_bin = filter_bin[0] + filter_bin[2:]
+        logger.debug('filter mask length after prepending 0: %s', len(filter_bin))
+        filter_ = torch.tensor([int(x) for x in filter_bin], dtype=torch.bool)
+    else:
+        total = int.from_bytes(f.read(2), byteorder=byteorder)
+        indices = [0] * total
+        for i in range(total):
+            indices[i] = int.from_bytes(f.read(2), byteorder=byteorder)
+        filter_ = torch.zeros(tokenizer.vocab_size, dtype=torch.bool)
+        filter_[indices] = 1
+
+    bs_length = int.from_bytes(f.read(4), byteorder=byteorder)
+    bitstream = []
+    for i in range(bs_length):
+        bitstream.append(int.from_bytes(f.read(4), byteorder=byteorder))
+
+    num_state_bytes = int.from_bytes(f.read(4), byteorder=byteorder)
+    state = int.from_bytes(f.read(num_state_bytes), byteorder=byteorder)
+
+    logger.debug('length: %s', length)
+    logger.debug('fst_token: %s', fst_token)
+    logger.debug('flags: %s', flags)
+    logger.debug('filter: %s', filter_.shape)
+    logger.debug('bitstream: %s', bitstream)
+    logger.debug('state: %s', state)
+    return fst_token, length, state, bitstream, filter_
+
+
 if __name__ == '__main__':
     args = parse_args()
 
@@ -161,101 +264,30 @@ if __name__ == '__main__':
     byteorder = 'big'
 
     if args.encode:
-        with open(args.input, 'r') as f:
-            msg = f.read()
+        with open(args.input, 'r') as fin, open(args.output, 'wb') as fout:
+            filter_ = torch.zeros(tokenizer.vocab_size, dtype=bool)
+            for batch in reverse_read(fin, buf_size=args.batch_size):
+                filter_.zero_()
+                tokens = tokenizer(batch, return_tensors="pt")['input_ids']
+                filter_[tokens] = 1
+                bitstream, state, length = Streaming_rANS_encoder(tokens, model, tokenizer, filter_, M=M_VAL, verbose=args.verbose)
 
-        tokens = tokenizer(msg, return_tensors="pt")['input_ids']
-        filter_ = torch.zeros(tokenizer.vocab_size, dtype=bool)
-        filter_[tokens] = 1
-
-        total = int(filter_.sum())
-        use_bitmask = tokenizer.vocab_size < total * 2 + int(np.ceil(np.log2(total)))
-
-        bitstream, state, length = Streaming_rANS_encoder(tokens, model, tokenizer, filter_, M_VAL)
-        fst_token = tokens[:,0]
-
-        seq = ''.join(map(str,filter_.int().numpy()))
-        logger.info('len(seq) %s', len(seq))
-
-        with open(args.output, 'wb') as f:
-            f.write(length.to_bytes(4, byteorder=byteorder))
-            f.write(int(fst_token).to_bytes(4, byteorder=byteorder))
-
-            flags = 0 | use_bitmask
-
-            f.write(flags.to_bytes(1, byteorder=byteorder))
-            if use_bitmask:
-                filter_mask_as_bytes, filter_mask_as_bytes_length = bitstring_to_bytes(seq, byteorder=byteorder)
-                f.write(filter_mask_as_bytes_length.to_bytes(2, byteorder=byteorder))
-                logger.info('filter_mask_as_bytes_length: %s', filter_mask_as_bytes_length)
-                logger.info('filter_mask_as_bytes: %s', filter_mask_as_bytes)
-                f.write(s)
-            else:
-                # save indices instead
-                f.write(total.to_bytes(2, byteorder=byteorder))
-                for x in filter_.nonzero():
-                    f.write(int(x).to_bytes(2, byteorder=byteorder))
-
-            # TODO: try to optimize these sizes
-            f.write(len(bitstream).to_bytes(4, byteorder=byteorder))
-            for b in bitstream:
-                f.write(int(b).to_bytes(4, byteorder=byteorder))
-
-            # numpy throws an error if the number is too large
-            num_state_bytes = math.ceil(math.log2(int(state)))
-            f.write(int(num_state_bytes).to_bytes(4, byteorder=byteorder))
-            f.write(int(state).to_bytes(num_state_bytes, byteorder=byteorder))
+                save_block(fout, tokens[:,0], filter_, tokenizer.vocab_size, bitstream, state, length, byteorder=byteorder)
     else:
-        with open(args.input, 'rb') as f:
-            length = int.from_bytes(f.read(4), byteorder=byteorder)
-            fst_token = torch.tensor(int.from_bytes(f.read(4), byteorder=byteorder), dtype=torch.int).unsqueeze(0).unsqueeze(0)
+        with open(args.input, 'rb') as fin, open(args.output, 'w') as fout:
+            while True:
+                try:
+                    fst_token, length, state, bitstream, filter_ = read_block(fin)
 
-            flags = int.from_bytes(f.read(1), byteorder=byteorder)
-
-            use_bitmask = bool(flags & 1)
-
-            if use_bitmask:
-                num_filter_bytes = int.from_bytes(f.read(2), byteorder=byteorder)
-                filter_bytes = f.read(num_filter_bytes)
-                filter_ = int.from_bytes(filter_bytes, byteorder=byteorder)
-                logger.info('num_filter_bytes: %s, filter_bytes: %s', num_filter_bytes, filter_bytes)
-                filter_bin = bin(filter_)
-                # FIXME: binary string was 1 char shorter, missing a '0' at the beginning
-                #        not sure why though, it was saved properly
-                filter_bin = filter_bin[0] + filter_bin[2:]
-                logger.info('filter mask length: %s', len(filter_bin))
-                filter_ = torch.tensor([int(x) for x in filter_bin], dtype=torch.bool)
-            else:
-                total = int.from_bytes(f.read(2), byteorder=byteorder)
-                indices = [0] * total
-                for i in range(total):
-                    indices[i] = int.from_bytes(f.read(2), byteorder=byteorder)
-                filter_ = torch.zeros(tokenizer.vocab_size, dtype=torch.bool)
-                filter_[indices] = 1
-
-            bs_length = int.from_bytes(f.read(4), byteorder=byteorder)
-            bitstream = []
-            for i in range(bs_length):
-                bitstream.append(int.from_bytes(f.read(4), byteorder=byteorder))
-
-            num_state_bytes = int.from_bytes(f.read(4), byteorder=byteorder)
-            state = int.from_bytes(f.read(num_state_bytes), byteorder=byteorder)
-
-        logger.info('length: %s', length)
-        logger.info('fst_token: %s', fst_token)
-        logger.info('flags: %s', flags)
-        logger.info('filter: %s', filter_.shape)
-        logger.info('bitstream: %s', bitstream)
-        logger.info('state: %s', state)
-
-        result = decode(tokenizer=tokenizer,
-                model=model,
-                state=state,
-                fst_token=fst_token,
-                length=length,
-                bitstream=bitstream,
-                filter=filter_,
-                M=M_VAL)
-        with open(args.output, 'w') as f:
-            f.write(result)
-
+                    result = decode(tokenizer=tokenizer,
+                            model=model,
+                            state=state,
+                            fst_token=fst_token,
+                            length=length,
+                            bitstream=bitstream,
+                            filter=filter_,
+                            M=M_VAL,
+                            verbose=args.verbose)
+                    fout.write(result)
+                except EOFError as error:
+                    break
