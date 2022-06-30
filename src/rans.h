@@ -13,7 +13,7 @@
 #include "predictor.h"
 #include "tokenizer.h"
 
-#define USE_LOOKUP_TABLE
+//#define USE_LOOKUP_TABLE
 
 class RANS {
     FRIEND_TEST(RANS_Test, get_symbol);
@@ -29,7 +29,8 @@ public:
     const static uint8_t STATE_BITS = 48;
     const static uint8_t HALF_STATE_BITS = STATE_BITS >> 1;
 
-    const static uint16_t MAX_SYMBOL = 50256;
+    typedef uint16_t SYMBOL;
+    const static SYMBOL MAX_SYMBOL = 50256;
     const static uint16_t BLOCK_SIZE = 8192;
 
     std::array<uint32_t, MAX_SYMBOL> frequencies{};
@@ -38,8 +39,8 @@ public:
 
     RANS(Tokenizer tokenizer, Predictor predictor);
 
-    inline uint32_t get_frequency(uint32_t symbol) {return frequencies[static_cast<uint32_t>(symbol)];};
-    inline uint32_t get_accumulated(uint32_t symbol) {return accumulated[static_cast<uint32_t>(symbol)];};
+    inline uint32_t get_frequency(SYMBOL symbol) {return frequencies[static_cast<SYMBOL>(symbol)];};
+    inline uint32_t get_accumulated(SYMBOL symbol) {return accumulated[static_cast<SYMBOL>(symbol)];};
 
     std::string encode(const char* data, uint16_t size);
     std::string decode(const char* state, uint16_t size);
@@ -50,7 +51,7 @@ protected:
 #endif
     std::array<uint32_t, MAX_SYMBOL> compute_cumulative_freq();
     void normalize_symbol_frequencies();
-    char get_symbol(uint32_t value);
+    SYMBOL get_symbol(uint32_t value);
 
     void compute_frequencies_from_probas(const torch::Tensor &probabilities);
 };
