@@ -12,3 +12,9 @@
     Decodes file indicated by "file_path"
 ```
 
+### installation of requirements
+```bash
+python3 -m venv venv
+source ./venv/bin/activate
+pip install -r requirements.txt
+```
