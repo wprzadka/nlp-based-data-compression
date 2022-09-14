@@ -9,8 +9,9 @@ def save_model(tokenizer: GPT2Tokenizer, model: GPT2LMHeadModel, path: str):
     inp = 'How are you?'
 
     example_input = tokenizer(inp, return_tensors='pt')
-    traced_model = torch.jit.trace(model, [example_input['input_ids']])
+    traced_model = torch.jit.trace(model, (example_input['input_ids'], ))
     torch.jit.save(traced_model, path)
+
 
 if __name__ == '__main__':
     tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
