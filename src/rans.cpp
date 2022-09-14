@@ -38,7 +38,9 @@ std::string RANS::encode(const char* data, uint16_t size) {
     for (long i = tokens.size(1) - 1; i >= 1; --i) {
 
         long beg = std::max(0l, i - prediction_window);
-        torch::Tensor input = torch::unsqueeze(tokens.index({0, torch::indexing::Slice(beg, i, torch::indexing::None)}), 0);
+        torch::Tensor input = torch::unsqueeze(tokens.index(
+                {0,torch::indexing::Slice(beg, i, torch::indexing::None)}
+                ), 0);
         DEBUG_LOG("context: ", input);
 
         torch::Tensor probas = predictor(input);
@@ -96,10 +98,6 @@ std::string RANS::decode(const char* code, uint16_t size) {
     DEBUG_LOG("first symbol: (" + tokenizer.decode({first_symbol}) + ")| ", first_symbol);
     decoded.push_back(first_symbol);
 
-    auto options = torch::TensorOptions().dtype(torch::kInt32);
-    torch::Tensor context = torch::empty(prediction_window, options);
-    context[0] = first_symbol;
-
     // Reconstruct state of rANS at end of encoding
     uint8_t state_bits = STATE_BITS;
     while (state_bits > 0) {
@@ -109,19 +107,30 @@ std::string RANS::decode(const char* code, uint16_t size) {
     }
     DEBUG_LOG("reconstructed state: ", state);
 
+    auto options = torch::TensorOptions().dtype(torch::kInt32);
+    torch::Tensor context = torch::empty(prediction_window, options);
+
     int sym_idx = 0;
     // Decode data
     while(state > (1 << HALF_STATE_BITS)){
         ++sym_idx;
-        long beg = std::max(0, sym_idx - prediction_window);
-        torch::Tensor input = torch::unsqueeze(context.index({torch::indexing::Slice(beg, sym_idx, torch::indexing::None)}), 0);
+        int beg = std::max(0, sym_idx - prediction_window);
+        int window_size = std::min(sym_idx, prediction_window);
+        std::deque<RANS::SYMBOL>::iterator iter = decoded.begin() + beg;
+        for(int i = 0; i < window_size; ++i){
+            context[i] = *iter;
+            ++iter;
+        }
+
+        torch::Tensor input = torch::unsqueeze(context.index({
+            torch::indexing::Slice(0, window_size, torch::indexing::None)
+        }), 0);
         DEBUG_LOG("context: ", input);
 
         torch::Tensor probas = predictor(input);
         compute_frequencies_from_probas(probas);
 
         SYMBOL s = get_symbol(state & MASK);
-        context[sym_idx] = s;
         decoded.push_back(s);
 
         DEBUG_LOG("symbol: (" + tokenizer.decode({s})  + ")| ", s);
