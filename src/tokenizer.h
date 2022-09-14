@@ -17,6 +17,7 @@ class Tokenizer {
     std::map<int, std::string> decoder;
     std::map<StringPair, int> pair_merges_ranks;
     std::map<char, std::string> unicode;
+    std::map<std::string, char> unicode_decoder;
 
 public:
     Tokenizer(const std::string& vocabulary_path, const std::string& pair_merges_path, const std::string& unicodes_path);
@@ -33,6 +34,7 @@ private:
     static std::vector<StringPair> get_character_pairs(const std::vector<std::string>& word);
     bool compare_by_rank(const StringPair &a, const StringPair &b);
     std::vector<std::string> bytes_to_unicode(const std::string &word);
+    std::string decode_unicodes(const std::string &word);
 };
 
 
