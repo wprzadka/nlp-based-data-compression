@@ -12,9 +12,10 @@
     Decodes file indicated by "file_path"
 ```
 
-### installation of torch
+### installation of necessary libraries
 ```bash
 python3 -m venv venv
 source ./venv/bin/activate
 pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cpu
+pip3 install transformers
 ```
