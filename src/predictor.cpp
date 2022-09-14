@@ -11,6 +11,7 @@ Predictor::Predictor(const std::string& path) {
     catch (const c10::Error& e) {
         throw std::runtime_error("Can not load the model from \"" + path + "\"");
     }
+    torch::manual_seed(0);
 }
 
 torch::Tensor Predictor::forward(const torch::Tensor& tokens) {

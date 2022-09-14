@@ -6,10 +6,10 @@
 #include <fstream>
 #include <getopt.h>
 #include <cassert>
-#include <numeric>
 #include "rans.h"
 #include "tokenizer.h"
 #include "predictor.h"
+#include "debug_macros.h"
 
 static const uint8_t BLOCK_SIZE_BYTES = 2;
 static const uint8_t SYMBOL_FREQ_BYTES = 3;
@@ -73,7 +73,8 @@ int encode_file(const std::string& input_file, const std::string& output_file = 
         /*
         write_symbol_freqencies(rans.frequencies, file_writer);
         */
-         write_size_of_block(file_writer, enc.size());
+        write_size_of_block(file_writer, enc.size());
+        DEBUG_LOG("size of block: ", enc.size());
         file_writer.write(enc.c_str(), static_cast<long>(enc.size()));
     }
     delete[] mem_buff;
@@ -107,11 +108,15 @@ int decode_file(const std::string& input_file, const std::string& output_file = 
         */
          // Read number of bytes in block
         uint32_t bytes_num = read_size_of_block(file_reader);
+        DEBUG_LOG("size of block: ", bytes_num);
+
         // Read next block
         file_reader.read(mem_buff, bytes_num);
         uint32_t bits_read = file_reader.gcount();
         // decode block
         std::string dec = rans.decode(mem_buff, bits_read);
+        DEBUG_LOG("decoded: ", dec);
+
         // save decoded block to file
         file_writer.write(dec.c_str(), static_cast<long>(dec.size()));
     }
@@ -122,33 +127,7 @@ int decode_file(const std::string& input_file, const std::string& output_file = 
 }
 
 int main(int argc, char** argv){
-    /*
-    Tokenizer tokenizer = Tokenizer(
-            "./data/gpt2-vocab/vocab.json",
-            "./data/gpt2-vocab/merges.txt",
-            "./data/gpt2-vocab/unicode.json"
-            );
-    Predictor pred("./data/gpt2-lm.pt");
 
-    std::string text = "I am";
-    for (int i = 0; i < 5; ++i) {
-        torch::Tensor tokens = tokenizer(text);
-
-        std::cout << "sizes: " << tokens.sizes() << "\n";
-        std::cout << "sizes: " << tokens.index({0, torch::indexing::Slice(0, i + 1, torch::indexing::None)}).sizes() << "\n";
-
-//        tokens = tokens.index(
-//                {torch::indexing::Slice(i - 2, i - 1, torch::indexing::None)}
-//        );
-        int arg = pred(tokens).argmax().item().toInt();
-        std::string next = tokenizer.decode({arg});
-        std::cout << ">" << next << "\n";
-        text += next;
-    }
-    std::cout << "\n--\n" << text << "\n";
-
-    return 0;
-    */
     option option_names[] = {
             {"version", no_argument, nullptr, 'v'},
             {"help", no_argument, nullptr, 'h'},

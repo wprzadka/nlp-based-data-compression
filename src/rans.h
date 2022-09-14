@@ -23,10 +23,10 @@ class RANS {
     Predictor predictor;
     const int prediction_window = 32;
 public:
-    const static uint8_t N_VALUE = 22;
+    const static uint8_t N_VALUE = 16;
     const static uint32_t MASK = (1 << N_VALUE) - 1;
 
-    const static uint8_t STATE_BITS = 48;
+    const static uint8_t STATE_BITS = 32;
     const static uint8_t HALF_STATE_BITS = STATE_BITS >> 1;
 
     typedef uint16_t SYMBOL;
@@ -35,7 +35,6 @@ public:
 
     std::array<uint32_t, MAX_SYMBOL> frequencies{};
     std::array<uint32_t, MAX_SYMBOL> accumulated{};
-    bool use_predictor = false;
 
     RANS(Tokenizer tokenizer, Predictor predictor);
 
