@@ -6,61 +6,20 @@
 #include <fstream>
 #include <getopt.h>
 #include <cassert>
-#include <numeric>
 #include "rans.h"
+#include "tokenizer.h"
+#include "predictor.h"
+#include "debug_macros.h"
 
 static const uint8_t BLOCK_SIZE_BYTES = 2;
 static const uint8_t SYMBOL_FREQ_BYTES = 3;
 
-void write_symbol_freqencies(const std::array<uint32_t, RANS::MAX_SYMBOL>& freqs, std::ofstream& file){
-
-    // Write number of symbols
-    char* mem_buff = new char[SYMBOL_FREQ_BYTES];
-    uint8_t non_zero_freqs_num = std::accumulate(
-            freqs.begin(),
-            freqs.end(),
-            0,
-            [](uint8_t acc, uint32_t elem){ return acc + (elem > 0 ? 1 : 0); }
-            );
-    mem_buff[0] = static_cast<char>(non_zero_freqs_num & 255);
-    file.write(mem_buff, 1);
-
-    // Write symbols - frequency pairs
-    for (unsigned char symbol = 0; symbol < RANS::MAX_SYMBOL; ++symbol){
-        if (freqs[symbol] == 0) {
-            continue;
-        }
-        mem_buff[0] = static_cast<int>(symbol) - RANS::NEGATIVE_SYMBOLS_NUM;
-        assert(freqs[symbol] < (1 << RANS::N_VALUE));
-        for (int i = 1; i < SYMBOL_FREQ_BYTES; ++i) {
-            mem_buff[i] = static_cast<char>((freqs[symbol] >> ((SYMBOL_FREQ_BYTES - 1 - i) << 3)) & 255);
-        }
-        file.write(mem_buff, SYMBOL_FREQ_BYTES);
-    }
-    delete[] mem_buff;
-}
-
-std::array<uint32_t, RANS::MAX_SYMBOL> read_symbol_frequencies(std::ifstream& file){
-    char* mem_buff = new char[SYMBOL_FREQ_BYTES];
-    std::array<uint32_t, RANS::MAX_SYMBOL> freqs{};
-
-    file.read(mem_buff, 1);
-    unsigned char symbols = static_cast<unsigned char>(mem_buff[0]);
-
-    while(symbols > 0){
-        file.read(mem_buff, SYMBOL_FREQ_BYTES);
-        uint32_t freq = 0;
-        for (int i = 1; i < SYMBOL_FREQ_BYTES; ++i){
-            freq <<= 8;
-            freq += static_cast<unsigned char>(mem_buff[i] & 255);
-        }
-        freqs[mem_buff[0] + RANS::NEGATIVE_SYMBOLS_NUM] = freq;
-        --symbols;
-    }
-
-    delete[] mem_buff;
-    return freqs;
-}
+static std::map<std::string, std::string> config {
+        {"vocab", "./data/gpt2-vocab/vocab.json"},
+        {"merges", "./data/gpt2-vocab/merges.txt"},
+        {"unicode", "./data/gpt2-vocab/unicode.json"},
+        {"predictor", "./data/gpt2-lm.pt"}
+};
 
 void write_size_of_block(std::ofstream& file, uint32_t size){
     assert(size < (1 << (BLOCK_SIZE_BYTES * 8)));
@@ -93,19 +52,29 @@ int encode_file(const std::string& input_file, const std::string& output_file = 
     if(!file_reader.is_open() || !file_writer.is_open()){
         return 1;
     }
-    RANS rans{};
+    RANS rans(
+        Tokenizer(config["vocab"], config["merges"], config["unicode"]),
+        Predictor(config["predictor"])
+    );
     char* mem_buff = new char[rans.BLOCK_SIZE];
     while(file_reader){
         // Read next block
         file_reader.read(mem_buff, rans.BLOCK_SIZE);
         uint32_t bits_read = file_reader.gcount();
+
+        /*
         // Prepare and frequencies of symbol occurrence
         rans.prepare_frequencies(mem_buff, bits_read);
+        */
+
         // encode block
         std::string enc = rans.encode(mem_buff, bits_read);
         // save block with frequencies to file
+        /*
         write_symbol_freqencies(rans.frequencies, file_writer);
+        */
         write_size_of_block(file_writer, enc.size());
+        DEBUG_LOG("size of block: ", enc.size());
         file_writer.write(enc.c_str(), static_cast<long>(enc.size()));
     }
     delete[] mem_buff;
@@ -120,7 +89,10 @@ int decode_file(const std::string& input_file, const std::string& output_file = 
     if(!file_reader.is_open() || !file_writer.is_open()){
         return 1;
     }
-    RANS rans{};
+    RANS rans(
+            Tokenizer(config["vocab"], config["merges"], config["unicode"]),
+            Predictor(config["predictor"])
+    );
     char* mem_buff = new char[rans.BLOCK_SIZE];
     // read end of file position
     file_reader.seekg(0, std::ifstream::end);
@@ -128,17 +100,23 @@ int decode_file(const std::string& input_file, const std::string& output_file = 
     file_reader.seekg(0, std::ifstream::beg);
 
     while(file_reader && file_reader.tellg() != file_length){
+        /*
         // Read frequencies
         std::array<uint32_t, RANS::MAX_SYMBOL> freqs{};
         freqs = read_symbol_frequencies(file_reader);
         rans.init_frequencies(freqs);
-        // Read number of bytes in block
+        */
+         // Read number of bytes in block
         uint32_t bytes_num = read_size_of_block(file_reader);
+        DEBUG_LOG("size of block: ", bytes_num);
+
         // Read next block
         file_reader.read(mem_buff, bytes_num);
         uint32_t bits_read = file_reader.gcount();
         // decode block
         std::string dec = rans.decode(mem_buff, bits_read);
+        DEBUG_LOG("decoded: ", dec);
+
         // save decoded block to file
         file_writer.write(dec.c_str(), static_cast<long>(dec.size()));
     }

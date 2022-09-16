@@ -22,6 +22,9 @@ Tokenizer::Tokenizer(
     for (const auto& entry: vocabulary){
         decoder[entry.second] = entry.first;
     }
+    for (const auto& entry: unicode){
+        unicode_decoder[entry.second] = entry.first;
+    }
 }
 
 std::map<std::string, int> Tokenizer::read_vocabulary(const std::string & path) {
@@ -75,7 +78,7 @@ std::map<char, std::string> Tokenizer::read_unicode_mapping(const std::string & 
     return unicodes;
 }
 
-std::vector<int> Tokenizer::tokenize(const std::string& text) {
+torch::Tensor Tokenizer::tokenize(const std::string& text) {
     std::vector<int> tokens{};
 
     std::regex re(R"('s|'t|'re|'ve|'m|'ll|'d| ?\w+|[,.!?])");
@@ -91,7 +94,12 @@ std::vector<int> Tokenizer::tokenize(const std::string& text) {
         iter += (result.begin()->str().size());
     }
 
-    return tokens;
+    auto options = torch::TensorOptions().dtype(torch::kInt32);
+    torch::Tensor tensor = torch::from_blob((void *) tokens.data(), {1, static_cast<long>(tokens.size())}, options)
+            .to(torch::kInt32)
+            .clone();
+
+    return tensor;
 }
 
 std::vector<std::string> Tokenizer::divide_to_subwords(const std::string &word) {
@@ -184,7 +192,30 @@ std::vector<std::string> Tokenizer::bytes_to_unicode(const std::string& word){
 std::string Tokenizer::decode(const std::vector<int>& tokens){
     std::string result;
     for (auto v: tokens){
-        result += decoder[v];
+        std::string word = decoder[v];
+        result += decode_unicodes(word);
     }
+    return result;
+}
+
+std::string Tokenizer::decode_unicodes(const std::string& word){
+    std::string result = "";
+    int beg = 0;
+    int end = 1;
+    while(end < word.size()){
+        std::string subword = word.substr(beg, end - beg);
+        auto iter = unicode_decoder.find(subword);
+        if(iter != unicode_decoder.end()){
+            result += iter->second;
+            beg = end;
+        }
+        ++end;
+    }
+    if(beg < end){
+        std::string subword = word.substr(beg, end);
+        auto iter = unicode_decoder.find(subword);
+        result += iter->second;
+    }
+
     return result;
 }
