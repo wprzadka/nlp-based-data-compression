@@ -4,7 +4,6 @@
 
 #include <string>
 #include <map>
-#include <fstream>
 #include <regex>
 #include <iostream>
 #include "tokenizer.h"
@@ -81,7 +80,7 @@ std::map<char, std::string> Tokenizer::read_unicode_mapping(const std::string & 
 torch::Tensor Tokenizer::tokenize(const std::string& text) {
     std::vector<int> tokens{};
 
-    std::regex re(R"('s|'t|'re|'ve|'m|'ll|'d| ?\w+|[,.!?])");
+    std::regex re(R"('s|'t|'re|'ve|'m|'ll|'d| ?[a-zA-Z]+| ?\d+| ?[^a-zA-Z\s\d]+|\s+(?!\S)|\s+)");
     std::smatch result;
     auto iter = text.begin();
     while(std::regex_search(iter, text.end(), result, re)){
@@ -91,7 +90,8 @@ torch::Tensor Tokenizer::tokenize(const std::string& text) {
             tokens.push_back(vocabulary[v]);
         }
 
-        iter += (result.begin()->str().size());
+        iter += result.prefix().str().size();
+        iter += result.str().size();
     }
 
     auto options = torch::TensorOptions().dtype(torch::kInt32);
