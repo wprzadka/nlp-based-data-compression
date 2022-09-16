@@ -46,7 +46,7 @@ std::string RANS::encode(const char* data, uint16_t size) {
         torch::Tensor probas = predictor(input);
         compute_frequencies_from_probas(probas);
 
-        uint32_t symbol = tokens.index({0, i}).item().toInt();
+        uint32_t symbol = tokens.index({0, i}).item<int>();
         DEBUG_LOG("symbol: (" + tokenizer.decode({(int)symbol}) + ")| ", symbol);
 
         uint32_t freq = get_frequency(symbol);
