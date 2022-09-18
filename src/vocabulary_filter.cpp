@@ -26,7 +26,7 @@ void VocabularyFilter::saveFilter(std::ofstream& file){
     char* mem_buff = new char[VOCAB_INDEX_BYTES];
 
     // save number of tokens that are present in vocabulary
-    int num_of_tokens = indices.size(1);
+    int num_of_tokens = indices.size(0);
     DEBUG_LOG("number of present tokens = ", num_of_tokens);
     for (int i = VOCAB_INDEX_BYTES - 1; i >= 0; --i) {
         mem_buff[i] = static_cast<char>(num_of_tokens & 255);
@@ -36,8 +36,8 @@ void VocabularyFilter::saveFilter(std::ofstream& file){
 
     // save indices of tokens
     // TODO encode differences
-    for(int k = 0; k < indices.size(1); ++k){
-        int token_index = indices.index({0, k}).item<int>();
+    for(int k = 0; k < indices.size(0); ++k){
+        int token_index = indices[k].item<int>();
         for (int i = VOCAB_INDEX_BYTES - 1; i >= 0; --i) {
             mem_buff[i] = static_cast<char>(token_index & 255);
             token_index >>= 8;
