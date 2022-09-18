@@ -13,6 +13,7 @@ add_executable(${PROJECT_NAME}
         src/rans.cpp
         src/tokenizer.cpp
         src/predictor.cpp
+        src/vocabulary_filter
         src/main.cpp)
 
 target_link_libraries(${PROJECT_NAME} "${TORCH_LIBRARIES}")

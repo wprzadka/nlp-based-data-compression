@@ -20,6 +20,9 @@ class Tokenizer {
     std::map<std::string, char> unicode_decoder;
 
 public:
+
+    const static uint16_t VOCAB_SIZE = 50257;
+
     Tokenizer(const std::string& vocabulary_path, const std::string& pair_merges_path, const std::string& unicodes_path);
     torch::Tensor tokenize(const std::string& text);
     inline torch::Tensor operator()(const std::string& text){return tokenize(text);}

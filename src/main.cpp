@@ -10,9 +10,10 @@
 #include "tokenizer.h"
 #include "predictor.h"
 #include "debug_macros.h"
+#include "vocabulary_filter.h"
 
 static const uint8_t BLOCK_SIZE_BYTES = 2;
-static const uint8_t SYMBOL_FREQ_BYTES = 3;
+static const bool USE_FILTER = false;
 
 static std::map<std::string, std::string> config {
         {"vocab", "./data/gpt2-vocab/vocab.json"},
@@ -52,17 +53,24 @@ int encode_file(const std::string& input_file, const std::string& output_file = 
     if(!file_reader.is_open() || !file_writer.is_open()){
         return 1;
     }
-    RANS rans(
-        Tokenizer(config["vocab"], config["merges"], config["unicode"]),
-        Predictor(config["predictor"])
-    );
-    char* mem_buff = new char[rans.BLOCK_SIZE];
+    Tokenizer tokenizer(config["vocab"], config["merges"], config["unicode"]);
+    VocabularyFilter filter(tokenizer);
+    Predictor predictor(config["predictor"], filter);
+    RANS rans(tokenizer, predictor);
+
+    char* mem_buff = new char[RANS::BLOCK_SIZE];
     while(file_reader){
-        // Read next block
-        file_reader.read(mem_buff, rans.BLOCK_SIZE);
+        // read next block
+        file_reader.read(mem_buff, RANS::BLOCK_SIZE);
         uint32_t bits_read = file_reader.gcount();
+        torch::Tensor tokens = tokenizer(std::string(mem_buff, bits_read));
+        // prepare and save vocabulary filter
+        if (USE_FILTER) {
+            filter.createFilter(tokens);
+            filter.saveFilter(file_writer);
+        }
         // encode block
-        std::string enc = rans.encode(mem_buff, bits_read);
+        std::string enc = rans.encode(tokens);
         // save block to file
         write_size_of_block(file_writer, enc.size());
         DEBUG_LOG("size of block: ", enc.size());
@@ -80,21 +88,26 @@ int decode_file(const std::string& input_file, const std::string& output_file = 
     if(!file_reader.is_open() || !file_writer.is_open()){
         return 1;
     }
-    RANS rans(
-            Tokenizer(config["vocab"], config["merges"], config["unicode"]),
-            Predictor(config["predictor"])
-    );
-    char* mem_buff = new char[rans.BLOCK_SIZE];
+    Tokenizer tokenizer(config["vocab"], config["merges"], config["unicode"]);
+    VocabularyFilter filter(tokenizer);
+    Predictor predictor(config["predictor"], filter);
+    RANS rans(tokenizer, predictor);
+
+    char* mem_buff = new char[RANS::BLOCK_SIZE];
     // read end of file position
     file_reader.seekg(0, std::ifstream::end);
     long file_length = file_reader.tellg();
     file_reader.seekg(0, std::ifstream::beg);
 
     while(file_reader && file_reader.tellg() != file_length){
-         // Read number of bytes in block
+        // read vocabulary filter
+        if (USE_FILTER) {
+            filter.readFilter(file_reader);
+        }
+        // read number of bytes in block
         uint32_t bytes_num = read_size_of_block(file_reader);
         DEBUG_LOG("size of block: ", bytes_num);
-        // Read next block
+        // read next block
         file_reader.read(mem_buff, bytes_num);
         uint32_t bits_read = file_reader.gcount();
         // decode block

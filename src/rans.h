@@ -41,7 +41,7 @@ public:
     inline uint32_t get_frequency(SYMBOL symbol) {return frequencies[static_cast<SYMBOL>(symbol)];};
     inline uint32_t get_accumulated(SYMBOL symbol) {return accumulated[static_cast<SYMBOL>(symbol)];};
 
-    std::string encode(const char* data, uint16_t size);
+    std::string encode(const torch::Tensor& tokens);
     std::string decode(const char* state, uint16_t size);
 
 protected:

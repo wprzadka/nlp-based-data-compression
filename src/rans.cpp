@@ -29,10 +29,9 @@ RANS::SYMBOL RANS::get_symbol(uint32_t value){
 }
 #endif
 
-std::string RANS::encode(const char* data, uint16_t size) {
+std::string RANS::encode(const torch::Tensor& tokens) {
     uint32_t state = (1 << HALF_STATE_BITS);
     std::string encoded;
-    torch::Tensor tokens = tokenizer(std::string(data, size));
 
     // Encode data
     for (long i = tokens.size(1) - 1; i >= 1; --i) {
