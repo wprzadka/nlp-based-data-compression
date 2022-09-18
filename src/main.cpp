@@ -61,18 +61,9 @@ int encode_file(const std::string& input_file, const std::string& output_file = 
         // Read next block
         file_reader.read(mem_buff, rans.BLOCK_SIZE);
         uint32_t bits_read = file_reader.gcount();
-
-        /*
-        // Prepare and frequencies of symbol occurrence
-        rans.prepare_frequencies(mem_buff, bits_read);
-        */
-
         // encode block
         std::string enc = rans.encode(mem_buff, bits_read);
-        // save block with frequencies to file
-        /*
-        write_symbol_freqencies(rans.frequencies, file_writer);
-        */
+        // save block to file
         write_size_of_block(file_writer, enc.size());
         DEBUG_LOG("size of block: ", enc.size());
         file_writer.write(enc.c_str(), static_cast<long>(enc.size()));
@@ -100,23 +91,15 @@ int decode_file(const std::string& input_file, const std::string& output_file = 
     file_reader.seekg(0, std::ifstream::beg);
 
     while(file_reader && file_reader.tellg() != file_length){
-        /*
-        // Read frequencies
-        std::array<uint32_t, RANS::MAX_SYMBOL> freqs{};
-        freqs = read_symbol_frequencies(file_reader);
-        rans.init_frequencies(freqs);
-        */
          // Read number of bytes in block
         uint32_t bytes_num = read_size_of_block(file_reader);
         DEBUG_LOG("size of block: ", bytes_num);
-
         // Read next block
         file_reader.read(mem_buff, bytes_num);
         uint32_t bits_read = file_reader.gcount();
         // decode block
         std::string dec = rans.decode(mem_buff, bits_read);
         DEBUG_LOG("decoded: ", dec);
-
         // save decoded block to file
         file_writer.write(dec.c_str(), static_cast<long>(dec.size()));
     }
