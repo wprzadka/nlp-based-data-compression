@@ -38,8 +38,8 @@ public:
 
     RANS(Tokenizer tokenizer, Predictor predictor);
 
-    inline uint32_t get_frequency(SYMBOL symbol) {return frequencies[static_cast<SYMBOL>(symbol)];};
-    inline uint32_t get_accumulated(SYMBOL symbol) {return accumulated[static_cast<SYMBOL>(symbol)];};
+    inline uint32_t get_frequency(SYMBOL symbol) {return frequencies[symbol];};
+    inline uint32_t get_accumulated(SYMBOL symbol) {return accumulated[symbol];};
 
     std::string encode(const char* data, uint16_t size);
     std::string decode(const char* state, uint16_t size);
