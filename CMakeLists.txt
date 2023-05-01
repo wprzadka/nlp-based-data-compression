@@ -13,7 +13,8 @@ add_executable(${PROJECT_NAME}
         src/rans.cpp
         src/tokenizer.cpp
         src/predictor.cpp
-        src/main.cpp)
+        src/main.cpp
+)
 
 target_link_libraries(${PROJECT_NAME} "${TORCH_LIBRARIES}")
 
@@ -25,7 +26,12 @@ add_subdirectory(googletest)
 include_directories(${gtest_SOURCE_DIR}/include ${gtest_SOURCE_DIR})
 
 add_executable(${PROJECT_NAME}_tests
+        nlohmann/json.hpp
         src/rans.cpp
+        src/tokenizer.cpp
+        src/predictor.cpp
         tests/rans_tests.cpp
 )
+
+target_link_libraries(${PROJECT_NAME}_tests "${TORCH_LIBRARIES}")
 target_link_libraries(${PROJECT_NAME}_tests gtest gtest_main)

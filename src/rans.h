@@ -16,8 +16,6 @@
 //#define USE_LOOKUP_TABLE
 
 class RANS {
-    FRIEND_TEST(RANS_Test, get_symbol);
-    FRIEND_TEST(RANS_Test, prepare_frequencies);
 
     Tokenizer tokenizer;
     Predictor predictor;
